@@ -1,0 +1,72 @@
+import pandas as pd import numpy as np 
+
+#Load Jaguars' salary cap data 
+
+file_path = "/mnt/data/Jags2025 Data.csv" jags_df = pd.read_csv(file_path, dtype=str) 
+
+#Convert numeric columns to float 
+
+positions = ["DB", "DL", "LB", "OL", "QB", "RB", "ST", "TE", "WR"] for col in positions + ["Cap Limit"]: jags_df[col] = jags_df[col].replace(",", "", regex=True).astype(float) 
+
+#Extract cap limit and current spending 
+
+cap_limit = jags_df["Cap Limit"].values[0] current_spending = jags_df[positions].iloc[0] 
+
+#Define variation probabilities 
+
+num_samples = 6000 extreme_shift_pct = 0.10 # 10% of data will have 50%-70% position shifts major_shift_pct = 0.30 # 30% of data will have 20%-49% position shifts normal_shift_pct = 0.60 # 60% of data will have 5%-19% position shifts 
+
+#Compute sample sizes for each shift category 
+
+extreme_samples = int(num_samples * extreme_shift_pct) major_samples = int(num_samples * major_shift_pct) normal_samples = num_samples - (extreme_samples + major_samples) 
+
+#Function to generate salary allocation shifts based on variation range 
+
+def generate_salary_allocations(n_samples, min_variation, max_variation): allocations = [] 
+
+for _ in range(n_samples): 
+    variation_range = np.random.uniform(min_variation, max_variation) 
+    rand_alloc = current_spending * np.random.uniform(1 - variation_range, 1 + variation_range, len(positions)) 
+ 
+    # Normalize to ensure total salary stays within the cap limit 
+    rand_alloc = (rand_alloc / rand_alloc.sum()) * cap_limit 
+ 
+    allocations.append(rand_alloc.to_dict()) 
+ 
+return pd.DataFrame(allocations) 
+  
+
+#Generate salary allocations with different levels of variation 
+
+extreme_allocations = generate_salary_allocations(extreme_samples, 0.50, 0.70) major_allocations = generate_salary_allocations(major_samples, 0.20, 0.49) normal_allocations = generate_salary_allocations(normal_samples, 0.05, 0.19) 
+
+#Combine all scenarios 
+
+combined_allocations = pd.concat([extreme_allocations, major_allocations, normal_allocations], ignore_index=True) 
+
+#Round to 2 decimal places for realistic financial data 
+
+combined_allocations = combined_allocations.round(2) 
+
+#Function to ensure exact cap limit by adjusting the largest allocation 
+
+def enforce_exact_cap_limit(df, cap_limit): for index, row in df.iterrows(): row[positions] = (row[positions] / row[positions].sum()) * cap_limit largest_position = row[positions].idxmax() row[largest_position] += cap_limit - row[positions].sum() df.loc[index, positions] = row[positions] 
+
+return df.round(2) 
+  
+
+#Apply strict enforcement of cap limit 
+
+final_fixed_allocations = enforce_exact_cap_limit(combined_allocations, cap_limit) 
+
+#Save the dataset 
+
+output_file_path = "/mnt/data/Final_Fixed_Jags_Allocations.csv" final_fixed_allocations.to_csv(output_file_path, index=False) 
+
+#Display corrected data 
+
+import ace_tools as tools tools.display_dataframe_to_user(name="Final Fixed Jaguars Salary Allocations", dataframe=final_fixed_allocations) 
+
+#Return the new file path 
+
+output_file_path 
